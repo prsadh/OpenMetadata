@@ -113,6 +113,7 @@ class CommonDbSourceService(
         self.database_source_state = set()
         self.context.table_views = []
         self.context.table_constrains = []
+        self.context.table_es_map = {}
         super().__init__()
 
     def set_inspector(self, database_name: str) -> None:
@@ -490,17 +491,28 @@ class CommonDbSourceService(
         foreign_constraints = []
         for constraint in table_constraints.foreign_constraints:
             referred_column_fqns = []
-            referred_table = fqn.search_table_from_es(
-                metadata=self.metadata,
-                table_name=constraint.get("referred_table"),
-                schema_name=constraint.get("referred_schema"),
-                database_name=None,
-                service_name=self.context.database_service.name.__root__,
+            referred_table = self.context.table_es_map.get(
+                (constraint.get("referred_schema"), constraint.get("referred_table"))
             )
-            for column in constraint.get("referred_columns"):
-                col_fqn = get_column_fqn(table_entity=referred_table, column=column)
-                if col_fqn:
-                    referred_column_fqns.append(col_fqn)
+            if not referred_table:
+                referred_table = fqn.search_table_from_es(
+                    metadata=self.metadata,
+                    table_name=constraint.get("referred_table"),
+                    schema_name=constraint.get("referred_schema"),
+                    database_name=None,
+                    service_name=self.context.database_service.name.__root__,
+                )
+                self.context.table_es_map[
+                    (
+                        constraint.get("referred_schema"),
+                        constraint.get("referred_table"),
+                    )
+                ] = referred_table
+            if referred_table:
+                for column in constraint.get("referred_columns"):
+                    col_fqn = get_column_fqn(table_entity=referred_table, column=column)
+                    if col_fqn:
+                        referred_column_fqns.append(col_fqn)
             foreign_constraints.append(
                 TableConstraint(
                     constraintType=ConstraintType.FOREIGN_KEY,
